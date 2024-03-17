@@ -59,6 +59,24 @@ def get_conv_model():
                   metrics=['acc'])
     return model
         
+def get_recurrent_model():
+    # shape of data for RNN is (n, time, feat)
+    model = Sequential()
+    model.add(LSTM(128, return_sequences=True, input_shape=input_shape))
+    model.add(LSTM(128, return_sequences=True))
+    model.add(Dropout(0.5))
+    model.add(TimeDistributed(Dense(64, activation='relu')))
+    model.add(TimeDistributed(Dense(32, activation='relu')))
+    model.add(TimeDistributed(Dense(16, activation='relu')))
+    model.add(TimeDistributed(Dense(8, activation='relu')))
+    model.add(Flatten())
+    model.add(Dense(10, activation='softmax'))
+    model.summary()
+    model.compile(loss='categorical_crossentropy',
+                  optimizer='adam',
+                  metrics=['acc'])
+    return model
+
 class Config:
     def __init__(self, mode='conv', nfilt=26, nfeat=13, nfft=512, rate=16000):
         self.mode = mode
@@ -88,15 +106,15 @@ ax.pie(class_dist, labels=class_dist.index, autopct='%1.1f%%', shadow=False, sta
 ax.axis('equal')
 plt.show()
 
-config = Config(mode='conv')
+config = Config(mode='time')
 
-if config.mode == 'conv':
+if config.mode == 'conv': # convolutional neural network
     X, y = build_rand_feat()
     y_flat = np.argmax(y, axis=1)
     input_shape = (X.shape[1], X.shape[2], 1)
     model = get_conv_model()
     
-elif config.mode == 'time':
+elif config.mode == 'time': # recurrent neural network
     X, y = build_rand_feat()
     y_flat = np.argmax(y, axis=1)
     input_shape = (X.shape[1], X.shape[2])
@@ -107,7 +125,8 @@ class_weights = compute_class_weight(class_weight='balanced',
                                     classes=np.unique(y_flat),
                                     y=y_flat)
 
-class_weight_dict = dict(enumerate(class_weight))
+class_weight_dict = dict(enumerate(class_weights))
+
 
 model.fit(X, y, epochs=10, batch_size=32, shuffle=True, class_weight=class_weight_dict)
 

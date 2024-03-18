@@ -10,8 +10,23 @@ from tensorflow.keras.utils import to_categorical
 from sklearn.utils.class_weight import compute_class_weight
 from tqdm import tqdm
 from python_speech_features import mfcc
+import pickle
+from tensorflow.keras.callbacks import ModelCheckpoint
+from cfg import Config
+
+def check_data():
+    if os.path.isfile(config.p_path):
+        print('Loading existing data for {} model'.format(config.mode))
+        with open(config.p_path, 'rb') as handle:
+            tmp = pickle.load(handle)
+            return tmp
+    else:
+        return None
 
 def build_rand_feat():
+    tmp = check_data()
+    if tmp:
+        return tmp.data[0], tmp.data[1]
     X= []
     y = []
     _min, _max = float('inf'), -float('inf')
@@ -22,11 +37,14 @@ def build_rand_feat():
         label = df.at[file, 'label']
         rand_index = np.random.randint(0, wav.shape[0]-config.step)
         sample = wav[rand_index:rand_index+config.step]
-        X_sample = mfcc(sample, rate, numcep=config.nfeat, nfilt = config.nfilt, nfft=config.nfft).T
+        X_sample = mfcc(sample, rate, numcep=config.nfeat, 
+                        nfilt = config.nfilt, nfft=config.nfft)
         _min = min(np.amin(X_sample), _min)
         _max = max(np.amax(X_sample), _max)
-        X.append(X_sample if config.mode == 'conv' else X_sample.T)
+        X.append(X_sample)
         y.append(classes.index(label))
+    config.min = _min
+    config.max = _max
     X, y = np.array(X), np.array(y)
     X = (X - _min) / (_max - _min)
     if config.mode == 'conv':
@@ -34,6 +52,11 @@ def build_rand_feat():
     elif config.mode == 'time':
         X = X.reshape(X.shape[0], X.shape[1], X.shape[2])
     y = to_categorical(y, num_classes=10)
+    
+    config.data = (X,y)
+    with open(config.p_path, 'wb') as handle:
+        pickle.dump(config, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
     return X, y
 
     
@@ -77,15 +100,6 @@ def get_recurrent_model():
                   metrics=['acc'])
     return model
 
-class Config:
-    def __init__(self, mode='conv', nfilt=26, nfeat=13, nfft=512, rate=16000):
-        self.mode = mode
-        self.nfilt = nfilt
-        self.nfeat = nfeat
-        self.nfft = nfft
-        self.rate = rate
-        self.step = int(rate/10)
-
 df = pd.read_csv('instruments.csv')
 df.set_index('fname', inplace=True)
 
@@ -106,7 +120,7 @@ ax.pie(class_dist, labels=class_dist.index, autopct='%1.1f%%', shadow=False, sta
 ax.axis('equal')
 plt.show()
 
-config = Config(mode='time')
+config = Config(mode='conv')
 
 if config.mode == 'conv': # convolutional neural network
     X, y = build_rand_feat()
@@ -127,8 +141,17 @@ class_weights = compute_class_weight(class_weight='balanced',
 
 class_weight_dict = dict(enumerate(class_weights))
 
+checkpoint = ModelCheckpoint(config.model_path, monitor='val_acc', verbose=1, 
+                             mode='max', save_best_only=True, 
+                             save_weights_only=False, period=1)
 
-model.fit(X, y, epochs=10, batch_size=32, shuffle=True, class_weight=class_weight_dict)
+model.fit(X, y, epochs=10, batch_size=32, shuffle=True, 
+          validation_split=0.1, 
+          callbacks = [checkpoint],
+          class_weight=class_weight_dict)
+
+model.save(config.model_path)
+
 
 
     

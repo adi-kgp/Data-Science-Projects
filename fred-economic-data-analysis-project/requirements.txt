@@ -1,0 +1,7 @@
+plotly
+matplotlib
+pandas
+fredapi
+plotly-orca
+
+# conda env: dsc
